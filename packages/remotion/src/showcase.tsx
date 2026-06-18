@@ -13,17 +13,17 @@ import { clampInterpolate, fadeInOut, segmentProgress } from './motion.ts'
 import { palette } from './palette.ts'
 
 const sessionsBefore = [
-	'019eda49-f0df-7c60-8cc2-b09dad3...',
-	'Untitled session',
-	'new chat',
-	'debug issue'
+	{ name: '019eda49-f0df-7c60-8cc2-b09dad3...', meta: 'Running' },
+	{ name: 'Untitled session', meta: 'Idle' },
+	{ name: 'new chat', meta: '~/Dev/flipper' },
+	{ name: 'debug issue', meta: 'main' }
 ]
 
 const sessionsAfter = [
-	'Remotion Showcase Video',
-	'Fix Rename Cooldown',
-	'Draft Plugin Installer',
-	'Review App-Server Path'
+	{ name: 'Remotion Showcase Video', meta: 'Running' },
+	{ name: 'Fix Rename Cooldown', meta: '~/Dev/codex-session-auto-rename' },
+	{ name: 'Draft Plugin Installer', meta: 'main' },
+	{ name: 'Review App-Server Path', meta: 'Idle' }
 ]
 
 const titleWall = [
@@ -174,12 +174,13 @@ function CmuxFrame({ mode, progress }: { mode: 'before' | 'after'; progress: num
 			<div style={styles.workspace}>
 				<div style={styles.sidebar}>
 					<div style={styles.sidebarHeading}>Codex Session Auto Rename</div>
-					{sidebarItems.map((name, index) => (
+					{sidebarItems.map((item, index) => (
 						<SidebarItem
-							key={name}
+							key={item.name}
 							active={index === 0}
 							delay={index * 4}
-							name={name}
+							name={item.name}
+							meta={item.meta}
 							after={after}
 							progress={progress}
 						/>
@@ -234,12 +235,14 @@ function CmuxFrame({ mode, progress }: { mode: 'before' | 'after'; progress: num
 
 function SidebarItem({
 	name,
+	meta,
 	active,
 	after,
 	progress,
 	delay
 }: {
 	name: string
+	meta: string
 	active: boolean
 	after: boolean
 	progress: number
@@ -258,9 +261,7 @@ function SidebarItem({
 			}}
 		>
 			<div style={styles.sidebarName}>{name}</div>
-			<div style={styles.sidebarMeta}>
-				{after ? 'Clear task title' : active ? 'Running' : 'Idle'}
-			</div>
+			<div style={styles.sidebarMeta}>{meta}</div>
 		</div>
 	)
 }
