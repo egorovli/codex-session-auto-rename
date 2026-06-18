@@ -1,0 +1,21 @@
+{
+	"name": "codex-session-auto-rename-workspace",
+	"version": "0.0.0",
+	"private": true,
+	"packageManager": "npm@11.12.1",
+	"workspaces": [
+		"packages/remotion"
+	],
+	"scripts": {
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"remotion:studio": "npm --workspace @codex-session-auto-rename/remotion run studio",
+		"remotion:compositions": "npm --workspace @codex-session-auto-rename/remotion run compositions",
+		"remotion:still": "npm --workspace @codex-session-auto-rename/remotion run render:still",
+		"remotion:video": "npm --workspace @codex-session-auto-rename/remotion run render:video",
+		"remotion:typecheck": "npm --workspace @codex-session-auto-rename/remotion run typecheck"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.0"
+	}
+}
