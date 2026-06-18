@@ -1,5 +1,15 @@
 # Codex Session Auto Rename
 
+> [!WARNING]
+> **This does not work properly yet. Help wanted.**
+>
+> The title engine can decide what a Codex session should be called, but we do not
+> currently know how to make a hook or plugin reliably rename the active visible
+> Codex session through a clean supported API. The current implementation can log
+> intended renames and attempt app-server metadata writes, but that has not proven
+> sufficient to update the already-running Codex UI. If you know the right Codex
+> integration point, please help.
+
 Automatic Codex thread names, only when the task changes.
 
 `codex-session-auto-rename` is a conservative Codex plugin runtime that keeps your session list readable. It captures the latest prompt intent, waits for the assistant turn to finish, and renames the thread only when there is enough signal that the durable task has changed.
