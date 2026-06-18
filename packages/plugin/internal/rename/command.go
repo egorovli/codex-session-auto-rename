@@ -15,8 +15,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer) error {
 		command = args[0]
 	}
 	if command == "version" {
-		_, _ = io.WriteString(stdout, "codex-session-auto-rename dev\n")
-		return nil
+		_, err := io.WriteString(stdout, "codex-session-auto-rename dev\n")
+		return err
 	}
 
 	config := ReadConfig()
@@ -72,16 +72,20 @@ func Run(args []string, stdin io.Reader, stdout io.Writer) error {
 
 func runCapture(config Config, threadID string, input HookInput, duration time.Duration) error {
 	prompt := ExtractPrompt(input)
+	turnID := input.StringField("turn_id")
+	promptHash := ""
+	stateTurnOrdinal := 0
 	err := WithThreadLock(config, threadID, func() error {
 		state := ReadThreadState(config, threadID)
+		stateTurnOrdinal = state.TurnOrdinal
 		if prompt != "" {
-			turnID := input.StringField("turn_id")
 			if turnID == "" {
 				turnID = sha256Hex(prompt)
 			}
 			cwd := optionalString(input.StringField("cwd"))
 			pending := CreatePendingPrompt(turnID, prompt, cwd)
 			state.PendingPrompt = &pending
+			promptHash = pending.PromptHash
 			return WriteThreadState(config, state)
 		}
 		return nil
@@ -98,14 +102,19 @@ func runCapture(config Config, threadID string, input HookInput, duration time.D
 		reason = "no prompt field found"
 	}
 	LogDecision(config, LogEntry{
-		At:         nowString(),
-		Level:      "info",
-		Event:      "capture",
-		ThreadID:   threadID,
-		Decision:   "captured",
-		Reason:     reason,
-		SourceHash: sourceHash,
-		DurationMs: duration.Milliseconds(),
+		At:               nowString(),
+		Level:            "info",
+		Event:            "capture",
+		Mode:             config.Mode,
+		HookEvent:        input.StringField("hook_event_name"),
+		ThreadID:         threadID,
+		TurnID:           turnID,
+		Decision:         "captured",
+		Reason:           reason,
+		PromptHash:       promptHash,
+		SourceHash:       sourceHash,
+		StateTurnOrdinal: stateTurnOrdinal,
+		DurationMs:       duration.Milliseconds(),
 	})
 	return nil
 }
@@ -119,16 +128,15 @@ func runDecide(config Config, threadID string, input HookInput, suggestOnly bool
 	state := ReadThreadState(config, threadID)
 	err := WithThreadLock(config, threadID, func() error {
 		state = ReadThreadState(config, threadID)
-		if input.StringField("hook_event_name") == "Stop" {
-			state.TurnOrdinal++
-		}
-		return WriteThreadState(config, state)
+		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	thread, threadErr := ReadThread(config, threadID)
+	thread, threadReadMode, threadErr := ReadThreadWithMode(config, threadID)
+	threadRead := thread != nil
+	currentTitle := oldTitle(thread)
 	prompt := state.PendingPrompt
 	if prompt == nil {
 		promptText := ExtractPrompt(input)
@@ -152,15 +160,19 @@ func runDecide(config Config, threadID string, input HookInput, suggestOnly bool
 			errorText = threadErr.Error()
 		}
 		LogDecision(config, LogEntry{
-			At:         nowString(),
-			Level:      "warn",
-			Event:      "decide",
-			ThreadID:   threadID,
-			Decision:   "skipped",
-			Reason:     "app-server thread/read unavailable",
-			SourceHash: sourceHash,
-			Error:      errorText,
-			DurationMs: time.Since(startedAt).Milliseconds(),
+			At:               nowString(),
+			Level:            "warn",
+			Event:            "decide",
+			Mode:             config.Mode,
+			HookEvent:        input.StringField("hook_event_name"),
+			ThreadID:         threadID,
+			TurnID:           input.StringField("turn_id"),
+			Decision:         "skipped",
+			Reason:           "app-server thread/read unavailable",
+			SourceHash:       sourceHash,
+			StateTurnOrdinal: state.TurnOrdinal,
+			Error:            errorText,
+			DurationMs:       time.Since(startedAt).Milliseconds(),
 		})
 		return nil
 	}
@@ -178,52 +190,90 @@ func runDecide(config Config, threadID string, input HookInput, suggestOnly bool
 		Transcript:       transcript,
 		SourceHash:       sourceHash,
 	})
+	appServerSet := false
+	appServerSetMode := ""
+	var verifiedTitle *string
+	verifyError := ""
 	if decision.Kind == "renamed" && decision.NewTitle != nil {
-		if err := SetThreadName(config, threadID, *decision.NewTitle); err != nil {
+		setMode, err := SetThreadNameWithMode(config, threadID, *decision.NewTitle)
+		if err != nil {
 			LogDecision(config, LogEntry{
-				At:         nowString(),
-				Level:      "error",
-				Event:      eventName,
-				ThreadID:   threadID,
-				Decision:   "failed",
-				Reason:     "app-server thread/name/set failed",
-				Error:      err.Error(),
-				SourceHash: sourceHash,
-				DurationMs: time.Since(startedAt).Milliseconds(),
+				At:               nowString(),
+				Level:            "error",
+				Event:            eventName,
+				Mode:             config.Mode,
+				HookEvent:        input.StringField("hook_event_name"),
+				ThreadID:         threadID,
+				TurnID:           input.StringField("turn_id"),
+				Decision:         "failed",
+				Reason:           "app-server thread/name/set failed",
+				OldTitle:         currentTitle,
+				NewTitle:         decision.NewTitle,
+				Error:            err.Error(),
+				SourceHash:       sourceHash,
+				StateTurnOrdinal: state.TurnOrdinal,
+				ThreadRead:       threadRead,
+				ThreadReadMode:   threadReadMode,
+				DurationMs:       time.Since(startedAt).Milliseconds(),
 			})
 			if suggestOnly {
 				return err
 			}
 			return nil
 		}
+		appServerSet = true
+		appServerSetMode = setMode
+		verifiedThread, verifyMode, err := ReadThreadWithMode(config, threadID)
+		if err != nil {
+			verifyError = err.Error()
+		} else if verifyMode != "" {
+			threadReadMode = verifyMode
+		}
+		verifiedTitle = oldTitle(verifiedThread)
 	}
 
-	appliedState := ApplyDecisionToState(state, decision)
-	if prompt != nil && appliedState.StableIntent == nil {
-		intent := ExtractIntent(prompt.PromptPreview)
-		appliedState.StableIntent = &intent
+	persistDecision := !suggestOnly && config.Mode != ModeDryRun
+	appliedState := state
+	if persistDecision {
+		appliedState = ApplyDecisionToState(state, decision)
+		if prompt != nil && appliedState.StableIntent == nil {
+			intent := ExtractIntent(prompt.PromptPreview)
+			appliedState.StableIntent = &intent
+		}
+		if decision.Kind == "renamed" {
+			appliedState.PendingPrompt = nil
+		} else {
+			appliedState.PendingPrompt = state.PendingPrompt
+		}
 	}
-	if decision.Kind == "renamed" {
-		appliedState.PendingPrompt = nil
-	} else {
-		appliedState.PendingPrompt = state.PendingPrompt
-	}
-	if err := WriteThreadState(config, appliedState); err != nil {
-		return err
+	if persistDecision {
+		if err := WriteThreadState(config, appliedState); err != nil {
+			return err
+		}
 	}
 	LogDecision(config, LogEntry{
-		At:         nowString(),
-		Level:      "info",
-		Event:      eventName,
-		ThreadID:   threadID,
-		Decision:   decision.Kind,
-		OldTitle:   decision.OldTitle,
-		NewTitle:   decision.NewTitle,
-		Confidence: &decision.Confidence,
-		Reason:     decision.Reason,
-		Signals:    decision.Signals,
-		SourceHash: decision.SourceHash,
-		DurationMs: time.Since(startedAt).Milliseconds(),
+		At:               nowString(),
+		Level:            "info",
+		Event:            eventName,
+		Mode:             config.Mode,
+		HookEvent:        input.StringField("hook_event_name"),
+		ThreadID:         threadID,
+		TurnID:           input.StringField("turn_id"),
+		Decision:         decision.Kind,
+		OldTitle:         decision.OldTitle,
+		NewTitle:         decision.NewTitle,
+		VerifiedTitle:    verifiedTitle,
+		Confidence:       &decision.Confidence,
+		Reason:           decision.Reason,
+		Signals:          decision.Signals,
+		SourceHash:       decision.SourceHash,
+		StateTurnOrdinal: appliedState.TurnOrdinal,
+		ThreadRead:       threadRead,
+		ThreadReadMode:   threadReadMode,
+		AppServerSet:     appServerSet,
+		AppServerSetMode: appServerSetMode,
+		VerifyError:      verifyError,
+		DurationMs:       time.Since(startedAt).Milliseconds(),
 	})
 	if suggestOnly {
 		raw, err := json.MarshalIndent(decision, "", "\t")
@@ -231,7 +281,9 @@ func runDecide(config Config, threadID string, input HookInput, suggestOnly bool
 			return err
 		}
 		raw = append(raw, '\n')
-		_, _ = stdout.Write(raw)
+		if _, err := stdout.Write(raw); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -241,13 +293,16 @@ func computeSourceHash(threadID, turnID string, prompt *PendingPrompt, assistant
 	if prompt != nil {
 		promptHash = prompt.PromptHash
 	}
-	raw, _ := json.Marshal(map[string]any{
+	raw, err := json.Marshal(map[string]any{
 		"threadId":          threadID,
 		"turnId":            turnID,
 		"promptHash":        promptHash,
 		"assistantHash":     sha256Hex(assistantMessage),
 		"transcriptSignals": transcript.ToolSignals,
 	})
+	if err != nil {
+		return sha256Hex(threadID + turnID + promptHash + sha256Hex(assistantMessage))
+	}
 	return sha256Hex(string(raw))
 }
 

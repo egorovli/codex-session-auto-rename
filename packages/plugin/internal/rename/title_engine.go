@@ -541,7 +541,7 @@ func validateTitle(title string, oldTitle *string, maxLength int) (*string, stri
 		clipped := clip(normalized, maxLength)
 		return &clipped, ""
 	}
-	if oldTitle != nil && strings.ToLower(normalized) == strings.ToLower(*oldTitle) {
+	if oldTitle != nil && strings.EqualFold(normalized, *oldTitle) {
 		return nil, "candidate equals current title"
 	}
 	if _, ok := genericTitles[strings.ToLower(normalized)]; ok {

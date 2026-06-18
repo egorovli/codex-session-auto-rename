@@ -20,11 +20,16 @@ func ReadTranscriptTail(path string, maxBytes int64) TranscriptTail {
 	if maxBytes <= 0 {
 		maxBytes = 384 * 1024
 	}
+	// #nosec G304 -- transcript_path is supplied by the Codex hook for the active local session.
 	file, err := os.Open(path)
 	if err != nil {
 		return TranscriptTail{}
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			return
+		}
+	}()
 	stat, err := file.Stat()
 	if err != nil {
 		return TranscriptTail{}

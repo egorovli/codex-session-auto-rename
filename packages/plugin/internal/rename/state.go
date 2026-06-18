@@ -14,6 +14,7 @@ var unsafeStateNameRe = regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
 func ReadThreadState(config Config, threadID string) ThreadState {
 	path := statePath(config, threadID)
 	state := InitialThreadState(threadID)
+	// #nosec G304 -- statePath constrains thread state reads to the configured local state directory.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return state
@@ -58,20 +59,27 @@ func WithThreadLock(config Config, threadID string, fn func() error) error {
 	}
 	lockDir := filepath.Join(config.StateDir, safeName(threadID)+".lock")
 	if err := os.Mkdir(lockDir, 0o700); err != nil {
-		if errors.Is(err, os.ErrExist) && clearStaleLock(lockDir) {
+		switch {
+		case errors.Is(err, os.ErrExist) && clearStaleLock(lockDir):
 			if retryErr := os.Mkdir(lockDir, 0o700); retryErr != nil {
 				return retryErr
 			}
-		} else if errors.Is(err, os.ErrExist) {
+		case errors.Is(err, os.ErrExist):
 			return errors.New("thread lock busy for " + threadID)
-		} else {
+		default:
 			return err
 		}
 	}
-	defer os.RemoveAll(lockDir)
+	defer func() {
+		if err := os.RemoveAll(lockDir); err != nil {
+			return
+		}
+	}()
 
 	ownerPath := filepath.Join(lockDir, "owner")
-	_ = os.WriteFile(ownerPath, []byte(intString(os.Getpid())+"\n"), 0o600)
+	if err := os.WriteFile(ownerPath, []byte(intString(os.Getpid())+"\n"), 0o600); err != nil {
+		return err
+	}
 	return fn()
 }
 

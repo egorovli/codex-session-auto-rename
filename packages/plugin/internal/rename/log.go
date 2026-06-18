@@ -7,19 +7,30 @@ import (
 )
 
 type LogEntry struct {
-	At         string   `json:"at"`
-	Level      string   `json:"level"`
-	Event      string   `json:"event"`
-	ThreadID   string   `json:"threadId,omitempty"`
-	Decision   string   `json:"decision,omitempty"`
-	Reason     string   `json:"reason,omitempty"`
-	Signals    []string `json:"signals,omitempty"`
-	OldTitle   *string  `json:"oldTitle,omitempty"`
-	NewTitle   *string  `json:"newTitle,omitempty"`
-	Confidence *float64 `json:"confidence,omitempty"`
-	SourceHash string   `json:"sourceHash,omitempty"`
-	Error      string   `json:"error,omitempty"`
-	DurationMs int64    `json:"durationMs,omitempty"`
+	At               string   `json:"at"`
+	Level            string   `json:"level"`
+	Event            string   `json:"event"`
+	Mode             Mode     `json:"mode,omitempty"`
+	HookEvent        string   `json:"hookEvent,omitempty"`
+	ThreadID         string   `json:"threadId,omitempty"`
+	TurnID           string   `json:"turnId,omitempty"`
+	Decision         string   `json:"decision,omitempty"`
+	Reason           string   `json:"reason,omitempty"`
+	Signals          []string `json:"signals,omitempty"`
+	OldTitle         *string  `json:"oldTitle,omitempty"`
+	NewTitle         *string  `json:"newTitle,omitempty"`
+	VerifiedTitle    *string  `json:"verifiedTitle,omitempty"`
+	Confidence       *float64 `json:"confidence,omitempty"`
+	PromptHash       string   `json:"promptHash,omitempty"`
+	SourceHash       string   `json:"sourceHash,omitempty"`
+	StateTurnOrdinal int      `json:"stateTurnOrdinal,omitempty"`
+	ThreadRead       bool     `json:"threadRead,omitempty"`
+	ThreadReadMode   string   `json:"threadReadMode,omitempty"`
+	AppServerSet     bool     `json:"appServerSet,omitempty"`
+	AppServerSetMode string   `json:"appServerSetMode,omitempty"`
+	Error            string   `json:"error,omitempty"`
+	VerifyError      string   `json:"verifyError,omitempty"`
+	DurationMs       int64    `json:"durationMs,omitempty"`
 }
 
 func LogDecision(config Config, entry LogEntry) {
@@ -35,6 +46,13 @@ func LogDecision(config Config, entry LogEntry) {
 	if err != nil {
 		return
 	}
-	defer file.Close()
-	_, _ = file.Write(raw)
+	if _, err := file.Write(raw); err != nil {
+		if closeErr := file.Close(); closeErr != nil {
+			return
+		}
+		return
+	}
+	if err := file.Close(); err != nil {
+		return
+	}
 }

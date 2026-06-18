@@ -31,6 +31,11 @@ type jsonRPCResponse struct {
 }
 
 func ReadThread(config Config, threadID string) (*ThreadRecord, error) {
+	thread, _, err := ReadThreadWithMode(config, threadID)
+	return thread, err
+}
+
+func ReadThreadWithMode(config Config, threadID string) (*ThreadRecord, string, error) {
 	var lastErr error
 	for _, mode := range []string{"proxy", "stdio"} {
 		client, err := startAppServerClient(config, mode)
@@ -47,15 +52,20 @@ func ReadThread(config Config, threadID string) (*ThreadRecord, error) {
 			lastErr = err
 			continue
 		}
-		return parseThreadReadResult(result), nil
+		return parseThreadReadResult(result), mode, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("app-server unavailable")
 	}
-	return nil, lastErr
+	return nil, "", lastErr
 }
 
 func SetThreadName(config Config, threadID, name string) error {
+	_, err := SetThreadNameWithMode(config, threadID, name)
+	return err
+}
+
+func SetThreadNameWithMode(config Config, threadID, name string) (string, error) {
 	var lastErr error
 	for _, mode := range []string{"proxy", "stdio"} {
 		client, err := startAppServerClient(config, mode)
@@ -72,12 +82,12 @@ func SetThreadName(config Config, threadID, name string) error {
 			lastErr = err
 			continue
 		}
-		return nil
+		return mode, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("app-server unavailable")
 	}
-	return lastErr
+	return "", lastErr
 }
 
 func startAppServerClient(config Config, mode string) (*appServerClient, error) {
@@ -86,6 +96,7 @@ func startAppServerClient(config Config, mode string) (*appServerClient, error) 
 		args = []string{"app-server", "--stdio"}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// #nosec G204 -- CodexPath is the configured Codex binary this hook is expected to launch.
 	cmd := exec.CommandContext(ctx, config.CodexPath, args...)
 	cmd.Env = append(os.Environ(), "CODEX_AUTO_RENAME_HOOK=1")
 	stdin, err := cmd.StdinPipe()
@@ -124,7 +135,10 @@ func startAppServerClient(config Config, mode string) (*appServerClient, error) 
 		client.close()
 		return nil, err
 	}
-	_ = client.send(map[string]any{"method": "initialized", "params": map[string]any{}})
+	if err := client.send(map[string]any{"method": "initialized", "params": map[string]any{}}); err != nil {
+		client.close()
+		return nil, err
+	}
 	return client, nil
 }
 
@@ -200,8 +214,12 @@ func (client *appServerClient) deletePending(id int) {
 
 func (client *appServerClient) close() {
 	client.cancel()
-	_ = client.stdin.Close()
-	_ = client.cmd.Wait()
+	if err := client.stdin.Close(); err != nil {
+		return
+	}
+	if err := client.cmd.Wait(); err != nil {
+		return
+	}
 }
 
 func parseThreadReadResult(raw json.RawMessage) *ThreadRecord {

@@ -8,7 +8,9 @@ import (
 
 func main() {
 	if err := rename.Run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
-		_, _ = os.Stderr.WriteString(err.Error() + "\n")
+		if _, writeErr := os.Stderr.WriteString(err.Error() + "\n"); writeErr != nil {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
