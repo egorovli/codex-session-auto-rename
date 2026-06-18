@@ -1,0 +1,17 @@
+{
+	"enabled": true,
+	"mode": "apply",
+	"respectManualTitles": true,
+	"minSecondsBetweenRenames": 600,
+	"minTurnsBetweenRenames": 4,
+	"maxTitleLength": 64,
+	"logPrompts": false,
+	"codexPath": "/opt/homebrew/bin/codex",
+	"bunPath": "/opt/homebrew/bin/bun",
+	"appServerTimeoutMs": 1500,
+	"llm": {
+		"enabled": false,
+		"model": "gpt-5.4-mini",
+		"timeoutMs": 2000
+	}
+}
