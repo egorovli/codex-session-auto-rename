@@ -10,6 +10,24 @@
 > sufficient to update the already-running Codex UI. If you know the right Codex
 > integration point, please help.
 
+## Demo
+
+The Remotion launch demo shows the intended developer-preview flow: opaque session names, a quick plugin install, clearer task-oriented titles, and the current caveat that reliable live UI rename still needs a supported Codex API.
+
+<video src="https://github.com/user-attachments/assets/2e1c0c05-4339-4fc0-8cdb-14e92c216574" poster="https://github.com/user-attachments/assets/2d4ddae5-07c7-424e-8bf8-e13ec2f0de01" controls width="100%"></video>
+
+Fallback/local source:
+
+- Demo MP4: [`assets/demo/codex-session-auto-rename-demo.mp4`](assets/demo/codex-session-auto-rename-demo.mp4)
+- Source composition: [`packages/remotion/`](packages/remotion/)
+
+Render it locally with:
+
+```sh
+npm run remotion:video
+npm run remotion:still
+```
+
 Automatic Codex thread names, only when the task changes.
 
 `codex-session-auto-rename` is a conservative Codex plugin runtime that keeps your session list readable. It captures the latest prompt intent, waits for the assistant turn to finish, and renames the thread only when there is enough signal that the durable task has changed.
@@ -35,16 +53,6 @@ This plugin chooses the middle path: rename Codex sessions when the durable task
 | Respects manual title edits by default | If you rename a thread yourself, the plugin backs off. |
 | Logs structured decisions | Skips and renames are inspectable when tuning behavior. |
 | Fails open on hook/app-server errors | Codex should keep working even if title automation cannot run. |
-
-## Demo
-
-A Remotion launch demo is planned. It will show the conservative rename flow, skip decisions, manual-title protection, and the app-server title update path without using private transcripts.
-
-Planned assets:
-
-- Demo video: `assets/demo/codex-session-auto-rename-demo.mp4`
-- Poster image: `assets/demo/poster.png`
-- Storyboard: `docs/demo/storyboard.md`
 
 ## Status
 
